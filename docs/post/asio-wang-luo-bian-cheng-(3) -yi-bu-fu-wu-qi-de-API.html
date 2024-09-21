@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    <script src='https://blog.meekdai.com/Gmeek/plugins/GmeekBSZ.js'></script>
+    <link rel="icon" href="https://github.githubassets.com/favicons/favicon.svg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="本文是学习[**恋恋风辰Zack**](https://space.bilibili.com/271469206)asio网络编程的学习记录
+本文建议可以直接阅读[**Zack的博客**](https://llfc.club/category?catid=225RaiVNI8pFDD5L4m807g7ZwmF#!aid/2O0QikntG7ktdgARRndYzNg8R55)，说的很详细。">
+<meta property="og:title" content="asio网络编程(3) 异步服务器的API">
+<meta property="og:description" content="本文是学习[**恋恋风辰Zack**](https://space.bilibili.com/271469206)asio网络编程的学习记录
+本文建议可以直接阅读[**Zack的博客**](https://llfc.club/category?catid=225RaiVNI8pFDD5L4m807g7ZwmF#!aid/2O0QikntG7ktdgARRndYzNg8R55)，说的很详细。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%283%29%20-yi-bu-fu-wu-qi-de-API.html">
+<meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
+<title>asio网络编程(3) 异步服务器的API</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+.copy-feedback {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 50px;
+    color: var(--color-fg-on-emphasis);
+    background-color: var(--color-fg-muted);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">asio网络编程(3) 异步服务器的API</h1>
+<div class="title-right">
+    <a href="https://Fklightdog.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/FKlightdog/Fklightdog.github.io/issues/7" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><p>本文是学习<a href="https://space.bilibili.com/271469206" rel="nofollow"><strong>恋恋风辰Zack</strong></a>asio网络编程的学习记录<br>
+本文建议可以直接阅读<a href="https://llfc.club/category?catid=225RaiVNI8pFDD5L4m807g7ZwmF#!aid/2O0QikntG7ktdgARRndYzNg8R55" rel="nofollow"><strong>Zack的博客</strong></a>，说的很详细。<br>
+一下仅记录一下我仿照写的源代码：</p>
+<h3>Session.h</h3>
+<div class="highlight highlight-source-c++"><pre class="notranslate">#<span class="pl-k">pragma</span> once
+#<span class="pl-k">include</span><span class="pl-s"><span class="pl-pds">&lt;</span>boost/asio.hpp<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span><span class="pl-s"><span class="pl-pds">&lt;</span>iostream<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span><span class="pl-s"><span class="pl-pds">&lt;</span>memory<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span><span class="pl-s"><span class="pl-pds">&lt;</span>queue<span class="pl-pds">&gt;</span></span>
+<span class="pl-k">using</span> <span class="pl-k">namespace</span> <span class="pl-en">boost</span><span class="pl-k">;</span>
+<span class="pl-k">using</span> <span class="pl-k">namespace</span> <span class="pl-en">std</span><span class="pl-k">;</span>
+<span class="pl-k">const</span> <span class="pl-k">int</span> RECVSIZE{ <span class="pl-c1">1024</span> };
+<span class="pl-c"><span class="pl-c">//</span>管理发送和接收的数据</span>
+<span class="pl-k">class</span> <span class="pl-en">MsgNode</span>
+{
+<span class="pl-k">public:</span>
+	<span class="pl-en">MsgNode</span>(<span class="pl-k">const</span> <span class="pl-k">char</span>* msg, <span class="pl-k">int</span> total_len)
+		:_total_len{ total_len }, _cur_len{ <span class="pl-c1">0</span> }
+	{
+		_msg = <span class="pl-k">new</span> <span class="pl-k">char</span>[total_len];
+		<span class="pl-c1">memcpy</span>(_msg, msg, total_len);
+	}
+
+	<span class="pl-en">MsgNode</span>(<span class="pl-k">int</span> total_len)
+		:_total_len{ total_len }, _cur_len{ <span class="pl-c1">0</span> }
+	{
+		_msg = <span class="pl-k">new</span> <span class="pl-k">char</span>[total_len];
+	}
+
+	<span class="pl-en">~MsgNode</span>()
+	{
+		<span class="pl-k">delete[]</span> _msg;
+	}
+	<span class="pl-c"><span class="pl-c">//</span>消息首地址</span>
+	<span class="pl-k">char</span>* _msg;
+	<span class="pl-c"><span class="pl-c">//</span>总长度</span>
+	<span class="pl-k">int</span> _total_len;
+	<span class="pl-c"><span class="pl-c">//</span>当前长度</span>
+	<span class="pl-k">int</span> _cur_len;
+};
+
+<span class="pl-k">class</span> <span class="pl-en">Session</span>
+{
+<span class="pl-k">public:</span>
+	<span class="pl-k">void</span> <span class="pl-en">ReadFromSocket</span>();
+	<span class="pl-k">void</span> <span class="pl-en">ReadCallBack</span>(<span class="pl-k">const</span> boost::system::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred);
+	<span class="pl-k">void</span> <span class="pl-en">WriteAllToSocket</span>(<span class="pl-k">const</span> std::string&amp; buf);
+	<span class="pl-k">void</span> <span class="pl-en">WriteAllCallBack</span>(<span class="pl-k">const</span> boost::system::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred);
+	<span class="pl-k">void</span> <span class="pl-en">WriteCallBack</span>(<span class="pl-k">const</span> boost::system::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred);
+	<span class="pl-k">void</span> <span class="pl-en">WriteToSocket</span>(<span class="pl-k">const</span> std::string&amp; buf);
+	<span class="pl-k">void</span> <span class="pl-en">WriteCallBackErr</span>(<span class="pl-k">const</span> boost::system::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred
+	, std::shared_ptr&lt;MsgNode&gt; msg_node);
+	<span class="pl-k">void</span> <span class="pl-en">WriteToSocketErr</span>(<span class="pl-k">const</span> std::string&amp; buf);
+	<span class="pl-en">Session</span>(std::shared_ptr&lt;asio::ip::tcp::socket&gt; socket);
+	<span class="pl-k">void</span> <span class="pl-en">connect</span>(<span class="pl-k">const</span> asio::ip::tcp::endpoint&amp; ep);
+<span class="pl-k">private:</span>
+	std::shared_ptr&lt;asio::ip::tcp::socket&gt; _socket;
+	std::shared_ptr&lt;MsgNode&gt; _send_node;
+	std::shared_ptr&lt;MsgNode&gt; _recv_node;
+	std::queue&lt;std::shared_ptr&lt;MsgNode&gt;&gt; _send_queue;
+	<span class="pl-k">bool</span> _send_pending;
+	<span class="pl-k">bool</span> _recev_pending;
+};
+
+</pre></div>
+<h3>Session.cpp</h3>
+<div class="highlight highlight-source-c++"><pre class="notranslate">#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">"</span>Session.h<span class="pl-pds">"</span></span>
+<span class="pl-c"><span class="pl-c">//</span>Session的初始化</span>
+<span class="pl-en">Session::Session</span>(std::shared_ptr&lt;asio::ip::tcp::socket&gt; socket)
+	:_socket(socket), _send_pending(<span class="pl-c1">false</span>), _recev_pending(<span class="pl-c1">false</span>)
+{
+}
+<span class="pl-c"><span class="pl-c">//</span>服务器当客户端进行连接时，调用connect函数</span>
+<span class="pl-k">void</span> <span class="pl-en">Session::connect</span>(<span class="pl-k">const</span> asio::ip::tcp::endpoint&amp; ep)
+{
+	_socket-&gt;<span class="pl-c1">connect</span>(ep);
+}
+
+<span class="pl-k">void</span> <span class="pl-en">Session::WriteCallBackErr</span>(<span class="pl-k">const</span> boost::system::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred, std::shared_ptr&lt;MsgNode&gt; msg_node)
+{
+	<span class="pl-k">if</span> (bytes_transferred + msg_node-&gt;<span class="pl-smi">_cur_len</span> &lt; msg_node-&gt;<span class="pl-smi">_total_len</span>)
+	{
+		_send_node-&gt;<span class="pl-smi">_cur_len</span> += bytes_transferred;
+		<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_write_some</span>(<span class="pl-c1">asio::buffer</span>(_send_node-&gt;<span class="pl-smi">_msg</span> + _send_node-&gt;<span class="pl-smi">_cur_len</span>, _send_node-&gt;<span class="pl-smi">_total_len</span> - _send_node-&gt;<span class="pl-smi">_cur_len</span>),
+			[<span class="pl-c1">this</span>, msg_node = _send_node](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+			{
+				<span class="pl-c1">this</span>-&gt;<span class="pl-c1">WriteCallBackErr</span>(ec, bytes_transferred, msg_node);
+			});
+	}
+}
+
+<span class="pl-k">void</span> <span class="pl-en">Session::WriteToSocketErr</span>(<span class="pl-k">const</span> std::string&amp; buf)
+{
+	_send_node = make_shared&lt;MsgNode&gt;(buf.<span class="pl-c1">c_str</span>(), buf.<span class="pl-c1">length</span>());
+	<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_write_some</span>(<span class="pl-c1">asio::buffer</span>(_send_node-&gt;<span class="pl-smi">_msg</span>, _send_node-&gt;<span class="pl-smi">_total_len</span>),
+		[<span class="pl-c1">this</span>, msg_node = _send_node](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+		{
+			<span class="pl-c1">this</span>-&gt;<span class="pl-c1">WriteCallBackErr</span>(ec, bytes_transferred, msg_node);
+		});
+}
+
+<span class="pl-k">void</span> <span class="pl-en">Session::WriteCallBack</span>(<span class="pl-k">const</span> boost::system::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+{
+	<span class="pl-k">if</span> (ec.<span class="pl-c1">value</span>() != <span class="pl-c1">0</span>)
+	{
+		std::cout &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>Error , code is <span class="pl-pds">"</span></span> &lt;&lt; ec.<span class="pl-c1">value</span>() &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span> . Message is <span class="pl-pds">"</span></span> &lt;&lt; ec.<span class="pl-c1">message</span>();
+		<span class="pl-k">return</span>;
+	}
+
+	<span class="pl-k">auto</span>&amp; send_data = _send_queue.<span class="pl-c1">front</span>();
+	send_data-&gt;<span class="pl-smi">_cur_len</span> += bytes_transferred;
+	<span class="pl-k">if</span> (send_data-&gt;<span class="pl-smi">_cur_len</span> &lt; send_data-&gt;<span class="pl-smi">_total_len</span>)
+	{
+		<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_write_some</span>(<span class="pl-c1">asio::buffer</span>(send_data-&gt;<span class="pl-smi">_msg</span> + send_data-&gt;<span class="pl-smi">_cur_len</span>, send_data-&gt;<span class="pl-smi">_total_len</span> - send_data-&gt;<span class="pl-smi">_cur_len</span>),
+			[<span class="pl-c1">this</span>](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+			{
+				<span class="pl-c1">this</span>-&gt;<span class="pl-c1">WriteCallBack</span>(ec, bytes_transferred);
+			});
+	}
+
+	_send_queue.<span class="pl-c1">pop</span>();
+
+	<span class="pl-k">if</span> (_send_queue.<span class="pl-c1">empty</span>())
+	{
+		_send_pending = <span class="pl-c1">false</span>;
+	}
+
+	<span class="pl-k">if</span> (!_send_queue.<span class="pl-c1">empty</span>())
+	{
+		<span class="pl-k">auto</span>&amp; send_data = _send_queue.<span class="pl-c1">front</span>();
+		<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_write_some</span>(<span class="pl-c1">asio::buffer</span>(send_data-&gt;<span class="pl-smi">_msg</span>, send_data-&gt;<span class="pl-smi">_total_len</span>),
+			[<span class="pl-c1">this</span>](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+			{
+				<span class="pl-c1">this</span>-&gt;<span class="pl-c1">WriteCallBack</span>(ec, bytes_transferred);
+			});
+	}
+}
+
+<span class="pl-k">void</span> <span class="pl-en">Session::WriteToSocket</span>(<span class="pl-k">const</span> std::string&amp; buf)
+{
+	_send_queue.<span class="pl-c1">emplace</span>(<span class="pl-k">new</span> <span class="pl-c1">MsgNode</span>(buf.<span class="pl-c1">c_str</span>(), buf.<span class="pl-c1">length</span>()));
+	<span class="pl-k">if</span> (_send_pending)
+	{
+		<span class="pl-k">return</span>;
+	}
+	<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_write_some</span>(<span class="pl-c1">asio::buffer</span>(buf),
+		[<span class="pl-c1">this</span>](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+		{
+			<span class="pl-c1">this</span>-&gt;<span class="pl-c1">WriteCallBack</span>(ec, bytes_transferred);
+		});
+	_send_pending = <span class="pl-c1">true</span>;
+}
+
+<span class="pl-k">void</span> <span class="pl-en">Session::WriteAllToSocket</span>(<span class="pl-k">const</span> std::string&amp; buf)
+{
+	_send_queue.<span class="pl-c1">emplace</span>(<span class="pl-k">new</span> <span class="pl-c1">MsgNode</span>(buf.<span class="pl-c1">c_str</span>(), buf.<span class="pl-c1">length</span>()));
+	<span class="pl-k">if</span> (_send_pending)
+	{
+		<span class="pl-k">return</span>;
+	}
+	<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_send</span>(<span class="pl-c1">asio::buffer</span>(buf),
+		[<span class="pl-c1">this</span>](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+		{
+			<span class="pl-c1">this</span>-&gt;<span class="pl-c1">WriteAllCallBack</span>(ec, bytes_transferred);
+		});
+	_send_pending = <span class="pl-c1">true</span>;
+}
+
+<span class="pl-k">void</span> <span class="pl-en">Session::WriteAllCallBack</span>(<span class="pl-k">const</span> boost::system::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+{
+	<span class="pl-k">if</span> (ec.<span class="pl-c1">value</span>() != <span class="pl-c1">0</span>)
+	{
+		std::cout &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>Error , code is <span class="pl-pds">"</span></span> &lt;&lt; ec.<span class="pl-c1">value</span>() &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span> . Message is <span class="pl-pds">"</span></span> &lt;&lt; ec.<span class="pl-c1">message</span>();
+		<span class="pl-k">return</span>;
+	}
+
+	_send_queue.<span class="pl-c1">pop</span>();
+	<span class="pl-k">if</span> (_send_queue.<span class="pl-c1">empty</span>())
+	{
+		_send_pending = <span class="pl-c1">false</span>;
+	}
+
+	<span class="pl-k">if</span> (!_send_queue.<span class="pl-c1">empty</span>())
+	{
+		<span class="pl-k">auto</span>&amp; send_data = _send_queue.<span class="pl-c1">front</span>();
+		<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_send</span>(<span class="pl-c1">asio::buffer</span>(send_data-&gt;<span class="pl-smi">_msg</span>, send_data-&gt;<span class="pl-smi">_total_len</span>),
+			[<span class="pl-c1">this</span>](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+			{
+				<span class="pl-c1">this</span>-&gt;<span class="pl-c1">WriteAllCallBack</span>(ec, bytes_transferred);
+			});
+	}
+}
+
+<span class="pl-k">void</span> <span class="pl-en">Session::ReadFromSocket</span>()
+{
+	<span class="pl-k">if</span> (_recev_pending)
+	{
+		<span class="pl-k">return</span>;
+	}
+	_recv_node = std::make_shared&lt;MsgNode&gt;(RECVSIZE);
+	<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_read_some</span>(<span class="pl-c1">asio::buffer</span>(_recv_node-&gt;<span class="pl-smi">_msg</span>, _recv_node-&gt;<span class="pl-smi">_total_len</span>),
+		[<span class="pl-c1">this</span>](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+		{
+			<span class="pl-c1">this</span>-&gt;<span class="pl-c1">ReadCallBack</span>(ec, bytes_transferred);
+		});
+	_recev_pending = <span class="pl-c1">true</span>;
+}
+
+<span class="pl-k">void</span> <span class="pl-en">Session::ReadCallBack</span>(<span class="pl-k">const</span> boost::system::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+{
+	_recv_node-&gt;<span class="pl-smi">_cur_len</span> += bytes_transferred;
+	<span class="pl-k">if</span> (_recv_node-&gt;<span class="pl-smi">_cur_len</span> &lt; _recv_node-&gt;<span class="pl-smi">_total_len</span>)
+	{
+		<span class="pl-c1">this</span>-&gt;<span class="pl-smi">_socket</span>-&gt;<span class="pl-c1">async_read_some</span>(<span class="pl-c1">asio::buffer</span>(_recv_node-&gt;<span class="pl-smi">_msg</span> + _recv_node-&gt;<span class="pl-smi">_cur_len</span>, _recv_node-&gt;<span class="pl-smi">_total_len</span> - _recv_node-&gt;<span class="pl-smi">_cur_len</span>),
+			[<span class="pl-c1">this</span>](<span class="pl-k">const</span> boost::<span class="pl-c1">system</span>::error_code&amp; ec, std::<span class="pl-c1">size_t</span> bytes_transferred)
+			{
+				<span class="pl-c1">this</span>-&gt;<span class="pl-c1">ReadCallBack</span>(ec, bytes_transferred);
+			});
+	}
+
+	_recev_pending = <span class="pl-c1">false</span>;
+	_recv_node = <span class="pl-c1">nullptr</span>;
+}</pre></div>
+<p>上述代码最大的不同是bind函数，因为自C++14后由于Lambda表达式的扩展，我们可以用Lambda表达式来写bind函数，而且可读性比bind函数更好。</p></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://Fklightdog.github.io">Fklightdog</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","FKlightdog/Fklightdog.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const createClipboardHTML = (codeContent, additionalClasses = '') => `
+        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
+        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
+            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
+                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
+                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
+            </clipboard-copy>
+            <div class="copy-feedback">Copied!</div>
+        </div>
+    `;
+
+    const handleCodeElements = (selector = '') => {
+        document.querySelectorAll(selector).forEach(codeElement => {
+            const codeContent = codeElement.innerHTML;
+            const newStructure = document.createElement('div');
+            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
+            newStructure.innerHTML = createClipboardHTML(codeContent);
+
+            const parentElement = codeElement.parentElement;
+            if (selector.includes('highlight')) {
+                parentElement.insertBefore(newStructure, codeElement.nextSibling);
+                parentElement.removeChild(codeElement);
+            } else {
+                parentElement.parentElement.replaceChild(newStructure, parentElement);
+            }
+        });
+    };
+
+    handleCodeElements('pre.notranslate > code.notranslate');
+    handleCodeElements('div.highlight > pre.notranslate');
+
+    let currentFeedback = null;
+    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
+        copyButton.addEventListener('click', () => {
+            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeContent;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+
+            const copyIcon = copyButton.querySelector('.octicon-copy');
+            const checkIcon = copyButton.querySelector('.octicon-check');
+            const copyFeedback = copyButton.nextElementSibling;
+
+            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
+            currentFeedback = copyFeedback;
+
+            copyIcon.classList.add('d-none');
+            checkIcon.classList.remove('d-none');
+            copyFeedback.style.display = 'block';
+            copyButton.style.borderColor = 'var(--color-success-fg)';
+
+            setTimeout(() => {
+                copyIcon.classList.remove('d-none');
+                checkIcon.classList.add('d-none');
+                copyFeedback.style.display = 'none';
+                copyButton.style.borderColor = '';
+            }, 2000);
+        });
+    });
+});
+
+</script>
+<script src='https://blog.meekdai.com/Gmeek/plugins/GmeekTOC.js'></script>
+
+</html>
