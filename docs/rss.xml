@@ -1,5 +1,22 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>Fklightdog</title><link>https://Fklightdog.github.io</link><description>大三学生，目前学习C++和Go</description><copyright>Fklightdog</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://github.githubassets.com/favicons/favicon.svg</url><title>avatar</title><link>https://Fklightdog.github.io</link></image><lastBuildDate>Sun, 22 Sep 2024 06:58:37 +0000</lastBuildDate><managingEditor>Fklightdog</managingEditor><ttl>60</ttl><webMaster>Fklightdog</webMaster><item><title>asio网络编程(4) asio官方异步服务器案例的搭建</title><link>https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%284%29%20asio-guan-fang-yi-bu-fu-wu-qi-an-li-de-da-jian.html</link><description>本文是学习[**恋恋风辰Zack**](https://space.bilibili.com/271469206)asio网络编程的学习记录&#13;
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>Fklightdog</title><link>https://Fklightdog.github.io</link><description>大三学生，目前学习C++和Go</description><copyright>Fklightdog</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://github.githubassets.com/favicons/favicon.svg</url><title>avatar</title><link>https://Fklightdog.github.io</link></image><lastBuildDate>Mon, 23 Sep 2024 10:05:13 +0000</lastBuildDate><managingEditor>Fklightdog</managingEditor><ttl>60</ttl><webMaster>Fklightdog</webMaster><item><title>asio网络编程(5) 伪闭包延长连接生命周期</title><link>https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%285%29%20-wei-bi-bao-yan-chang-lian-jie-sheng-ming-zhou-qi.html</link><description>本文是学习[**恋恋风辰Zack**](https://space.bilibili.com/271469206)asio网络编程的学习记录&#13;
+在上一节，我们可以看到双重析构的风险，因此我们在此节来改善这个问题，我们此处采用的方式是智能指针来延长我们Session的声明周期&#13;
+下面我们来逐步修改,优先修改Server类&#13;
+### Server类&#13;
+我们先从start_server函数开始&#13;
+```cpp&#13;
+Session(boost::asio::io_context&amp; ioc, Server* server)//此处的Session构造函数改了&#13;
+void Server::start_accept()&#13;
+{&#13;
+	std::shared_ptr&lt;Session&gt; new_session = std::make_shared&lt;Session&gt;(ioc, this);&#13;
+	acceptor.async_accept(new_session-&gt;Socket(),&#13;
+		[this, new_session](const boost::system::error_code&amp; error)&#13;
+		{&#13;
+			handle_accept(new_session, error);&#13;
+		});&#13;
+}&#13;
+```&#13;
+我们此处要用智能指针来代替最开始new出来的Session，顺带我们把回调函数也进行修改了，因为回调函数原本的new_session也是new出来的。</description><guid isPermaLink="true">https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%285%29%20-wei-bi-bao-yan-chang-lian-jie-sheng-ming-zhou-qi.html</guid><pubDate>Mon, 23 Sep 2024 10:04:30 +0000</pubDate></item><item><title>asio网络编程(4) asio官方异步服务器案例的搭建</title><link>https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%284%29%20asio-guan-fang-yi-bu-fu-wu-qi-an-li-de-da-jian.html</link><description>本文是学习[**恋恋风辰Zack**](https://space.bilibili.com/271469206)asio网络编程的学习记录&#13;
 ### 代码示例&#13;
 本文服务器框架风格为**C++03的example**，C++11的example与C++03example相比，只是多了**Lambada表达式和smart_ptr**，大体上的风格还是非常相似的。</description><guid isPermaLink="true">https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%284%29%20asio-guan-fang-yi-bu-fu-wu-qi-an-li-de-da-jian.html</guid><pubDate>Sun, 22 Sep 2024 06:58:01 +0000</pubDate></item><item><title>asio网络编程(3) 异步服务器的API</title><link>https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%283%29%20-yi-bu-fu-wu-qi-de-API.html</link><description>本文是学习[**恋恋风辰Zack**](https://space.bilibili.com/271469206)asio网络编程的学习记录&#13;
 本文建议可以直接阅读[**Zack的博客**](https://llfc.club/category?catid=225RaiVNI8pFDD5L4m807g7ZwmF#!aid/2O0QikntG7ktdgARRndYzNg8R55)，说的很详细。</description><guid isPermaLink="true">https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%283%29%20-yi-bu-fu-wu-qi-de-API.html</guid><pubDate>Sat, 21 Sep 2024 09:35:34 +0000</pubDate></item><item><title>asio网络编程(2) 同步服务器和客户端的创建</title><link>https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%282%29%20-tong-bu-fu-wu-qi-he-ke-hu-duan-de-chuang-jian.html</link><description>## 同步服务器和客户端的搭建&#13;
