@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    <script src='https://blog.meekdai.com/Gmeek/plugins/GmeekBSZ.js'></script>
+    <link rel="icon" href="https://github.githubassets.com/favicons/favicon.svg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="本文是学习[**恋恋风辰Zack**](https://space.bilibili.com/271469206)asio网络编程的学习记录
+### 逻辑层
+我们之前的通信流程是这样的：
+![图片](https://cdn.llfc.club/1685620269385.jpg)
+现在我们要完善我们的框架，让我们的框架变成如下这个样子：
+![图片](https://cdn.llfc.club/1685621283099.jpg)
+我们在此基础上添加了逻辑层，当我们进行读的回调函数的时候把数据和Session投入到一个逻辑队列里面，然后Logic系统从逻辑队列里面读取数据，读取到数据后再调用Send函数进行发送，发送的时候调用async_send()把事件和回调函数注册到asio网络层里面。">
+<meta property="og:title" content="asio网络编程(13) 实现逻辑层">
+<meta property="og:description" content="本文是学习[**恋恋风辰Zack**](https://space.bilibili.com/271469206)asio网络编程的学习记录
+### 逻辑层
+我们之前的通信流程是这样的：
+![图片](https://cdn.llfc.club/1685620269385.jpg)
+现在我们要完善我们的框架，让我们的框架变成如下这个样子：
+![图片](https://cdn.llfc.club/1685621283099.jpg)
+我们在此基础上添加了逻辑层，当我们进行读的回调函数的时候把数据和Session投入到一个逻辑队列里面，然后Logic系统从逻辑队列里面读取数据，读取到数据后再调用Send函数进行发送，发送的时候调用async_send()把事件和回调函数注册到asio网络层里面。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://Fklightdog.github.io/post/asio-wang-luo-bian-cheng-%2813%29%20-shi-xian-luo-ji-ceng.html">
+<meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
+<title>asio网络编程(13) 实现逻辑层</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+.copy-feedback {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 50px;
+    color: var(--color-fg-on-emphasis);
+    background-color: var(--color-fg-muted);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+</style>
+<style>.markdown-alert{padding:0.5rem 1rem;margin-bottom:1rem;border-left:.25em solid var(--borderColor-default,var(--color-border-default));}.markdown-alert .markdown-alert-title {display:flex;font-weight:var(--base-text-weight-medium,500);align-items:center;line-height:1;}.markdown-alert>:first-child {margin-top:0;}.markdown-alert>:last-child {margin-bottom:0;}</style><style>.markdown-alert.markdown-alert-note {border-left-color:var(--borderColor-accent-emphasis, var(--color-accent-emphasis));background-color:var(--color-accent-subtle);}.markdown-alert.markdown-alert-note .markdown-alert-title {color: var(--fgColor-accent,var(--color-accent-fg));}</style>
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">asio网络编程(13) 实现逻辑层</h1>
+<div class="title-right">
+    <a href="https://Fklightdog.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/FKlightdog/Fklightdog.github.io/issues/17" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><p>本文是学习<a href="https://space.bilibili.com/271469206" rel="nofollow"><strong>恋恋风辰Zack</strong></a>asio网络编程的学习记录</p>
+<h3>逻辑层</h3>
+<p>我们之前的通信流程是这样的：<br>
+<a target="_blank" rel="noopener noreferrer nofollow" href="https://camo.githubusercontent.com/f4431863f918934efb338993a6243b984410b84e7750b1d8299ca1f4c988f7f4/68747470733a2f2f63646e2e6c6c66632e636c75622f313638353632303236393338352e6a7067"><img src="https://camo.githubusercontent.com/f4431863f918934efb338993a6243b984410b84e7750b1d8299ca1f4c988f7f4/68747470733a2f2f63646e2e6c6c66632e636c75622f313638353632303236393338352e6a7067" alt="图片" data-canonical-src="https://cdn.llfc.club/1685620269385.jpg" style="max-width: 100%;"></a><br>
+现在我们要完善我们的框架，让我们的框架变成如下这个样子：<br>
+<a target="_blank" rel="noopener noreferrer nofollow" href="https://camo.githubusercontent.com/e7ffe7e5eba0f554ce12fe5f53e65048f9bb4c8de5bfb98719aaae88ee88860a/68747470733a2f2f63646e2e6c6c66632e636c75622f313638353632313238333039392e6a7067"><img src="https://camo.githubusercontent.com/e7ffe7e5eba0f554ce12fe5f53e65048f9bb4c8de5bfb98719aaae88ee88860a/68747470733a2f2f63646e2e6c6c66632e636c75622f313638353632313238333039392e6a7067" alt="图片" data-canonical-src="https://cdn.llfc.club/1685621283099.jpg" style="max-width: 100%;"></a><br>
+我们在此基础上添加了逻辑层，当我们进行读的回调函数的时候把数据和Session投入到一个逻辑队列里面，然后Logic系统从逻辑队列里面读取数据，读取到数据后再调用Send函数进行发送，发送的时候调用async_send()把事件和回调函数注册到asio网络层里面。<br>
+对于逻辑层，我们采用的是单线程模式，并不会采用多线程。<br>
+假设如果我们队玩家给工会贡献物品这一行为采用了多线程，那每一个玩家给工会贡献物品的时候，我们都要对线程进行加锁和解锁，这样重复的加锁，我们还不如采用单线程的模式。</p>
+<h3>构造单例模版类</h3>
+<p>因为我们的服务器逻辑层是单线程模式，所以我们需要我们的逻辑层在多个线程的情况下也是唯一的。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-c"><span class="pl-c">//</span>Singleton.h</span>
+#<span class="pl-k">pragma</span> once
+#<span class="pl-k">include</span><span class="pl-s"><span class="pl-pds">&lt;</span>iostream<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span><span class="pl-s"><span class="pl-pds">&lt;</span>memory<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span><span class="pl-s"><span class="pl-pds">&lt;</span>mutex<span class="pl-pds">&gt;</span></span>
+<span class="pl-k">using</span> <span class="pl-k">namespace</span> <span class="pl-en">std</span><span class="pl-k">;</span>
+<span class="pl-k">template</span>&lt;<span class="pl-k">typename</span> T&gt;
+<span class="pl-k">class</span> <span class="pl-en">Singleton</span>
+{
+<span class="pl-k">protected:</span>
+	<span class="pl-en">Singleton</span>() = <span class="pl-k">default</span>;
+	<span class="pl-en">Singleton</span>(<span class="pl-k">const</span> Singleton&lt;T&gt;&amp;) = <span class="pl-k">delete</span>;
+	Singleton&amp; <span class="pl-k">operator</span>=(<span class="pl-k">const</span> Singleton&lt;T&gt;&amp; st) = <span class="pl-k">delete</span>;
+	<span class="pl-k">static</span> shared_ptr&lt;T&gt; _instance;
+<span class="pl-k">public:</span>
+	<span class="pl-k">static</span> shared_ptr&lt;T&gt; <span class="pl-en">GetInstance</span>()
+	{
+		<span class="pl-k">static</span> std::once_flag flag;
+		<span class="pl-c1">std::call_once</span>(flag, [&amp;]() {
+			_instance = shared_ptr&lt;T&gt;(<span class="pl-k">new</span> T);
+			});
+
+		<span class="pl-k">return</span> _instance;
+	}
+	<span class="pl-k">void</span> <span class="pl-en">PrintAddress</span>()
+	{
+		cout &lt;&lt; _instance.<span class="pl-c1">get</span>() &lt;&lt; endl;
+	}
+	<span class="pl-en">~Singleton</span>()
+	{
+		std::cout &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>Singleton Destructor<span class="pl-cce">\n</span><span class="pl-pds">"</span></span>  ;
+	}
+};
+
+<span class="pl-k">template</span>&lt;<span class="pl-k">typename</span> T&gt;
+shared_ptr&lt;T&gt; Singleton&lt;T&gt;::_instance = <span class="pl-c1">nullptr</span>;<span class="pl-c"><span class="pl-c">//</span>单例模式的静态成员变量初始化</span></pre></div>
+<p>在这个类中我们定义了一个static的智能指针来表示单例。<br>
+随后在Public中我们有一个静态函数来返回我们的单例。在这个函数中我们先创建了静态的变量flag，其类型是once_flag，这保证了我们的flag在多个线程内只会被创建一次。<br>
+call_once类型的代码只会被运行一次,其取决于flag,就会执行后面的匿名函数,然后创建我们的单例。最后进行return</p>
+<div class="markdown-alert markdown-alert-note"><p class="markdown-alert-title"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>Note</p><p>首先因为我们这个类是单例类所以我们要禁止构造函数、拷贝构造函数及其拷贝运算&gt;符，并且为了其不被其他人调用，我们应该要将其设为prviate。但是我们的逻辑层要继承这个单利类，对于继承而言：构造函数是先构造父类然后再构造子类，而析构函数是先析构子类，再析构父类。因此我们应该将其设为protected。自然，因为上面的原则，因此我们要将析构函数放到public处。</p>
+</div>
+<h3>实现我们的逻辑类</h3>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-c"><span class="pl-c">//</span>LogicSystem.h</span>
+#<span class="pl-k">pragma</span> once
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">"</span>Singleton.h<span class="pl-pds">"</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">&lt;</span>queue<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">&lt;</span>thread<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">"</span>CSession.h<span class="pl-pds">"</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">&lt;</span>queue<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">&lt;</span>map<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">&lt;</span>functional<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">"</span>const.h<span class="pl-pds">"</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">&lt;</span>json/json.h<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">&lt;</span>json/value.h<span class="pl-pds">&gt;</span></span>
+#<span class="pl-k">include</span> <span class="pl-s"><span class="pl-pds">&lt;</span>json/reader.h<span class="pl-pds">&gt;</span></span>
+<span class="pl-k">class</span> <span class="pl-en">CSession</span>;
+<span class="pl-k">class</span> <span class="pl-en">LogicNode</span>;
+<span class="pl-k">typedef</span> function&lt;<span class="pl-k">void</span>(std::shared_ptr&lt;CSession&gt;, <span class="pl-k">short</span> msg_id, std::string msg_data)&gt; FunCallBack;
+<span class="pl-k">class</span> <span class="pl-en">LogicSystem</span> :<span class="pl-k">public</span> <span class="pl-en">Singleton</span>&lt;LogicSystem&gt;
+{
+	<span class="pl-k">friend</span> <span class="pl-k">class</span> <span class="pl-en">Singleton</span>&lt;LogicSystem&gt;;
+<span class="pl-k">public:</span>
+	<span class="pl-en">~LogicSystem</span>();
+	<span class="pl-k">void</span> <span class="pl-en">PostMsgQue</span>(std::shared_ptr&lt;LogicNode&gt; logic_node);<span class="pl-c"><span class="pl-c">//</span>发送到消息队列</span>
+<span class="pl-k">private:</span>
+	<span class="pl-en">LogicSystem</span>();
+	<span class="pl-k">void</span> <span class="pl-en">DealMsg</span>();
+	<span class="pl-k">void</span> <span class="pl-en">RegisterCallBacks</span>();
+	<span class="pl-k">void</span> <span class="pl-en">HelloWordCallBacks</span>(std::shared_ptr&lt;CSession&gt; session, <span class="pl-k">short</span> msg_id, std::string msg_data);
+	std::thread _worker_thread;<span class="pl-c"><span class="pl-c">//</span>工作线程</span>
+	std::queue&lt;std::shared_ptr&lt;LogicNode&gt; &gt; _msg_que;<span class="pl-c"><span class="pl-c">//</span>逻辑队列</span>
+	std::mutex _mutex;<span class="pl-c"><span class="pl-c">//</span>锁</span>
+	std::condition_variable _consume;<span class="pl-c"><span class="pl-c">//</span>条件变量</span>
+	<span class="pl-k">bool</span> _b_stop;<span class="pl-c"><span class="pl-c">//</span>从外部接受到的停止信号</span>
+	std::map&lt;<span class="pl-k">short</span>, FunCallBack&gt; _fun_callbacks;<span class="pl-c"><span class="pl-c">//</span>id对应的回调函数</span>
+};</pre></div>
+<p>我们将回调函数的function类型用typedef重定义成了FunCallBack。<br>
+在public区域里，我们设置析构函数为公有的；同时声明了一个函数PostMsgQue，其主要执行的是将信息发送到消息队列的操作。<br>
+在private区域里：</p>
+<ul>
+<li>LogicSystem(): 构造逻辑层。</li>
+<li>DealMsg(): 处理队列中的信息</li>
+<li>RegisterCallBacks(): 注册回调函数</li>
+<li>HelloWordCallBacks()：对于HelloWorld类型的ID，我们进行处理</li>
+<li>__worker_thread: 工作线程</li>
+<li>_msg_que: 逻辑队列</li>
+<li>_mutex: 锁</li>
+<li>_consume: 条件变量</li>
+<li>_b_stop: 从外部接受到的停止信号</li>
+<li>_fun_callbacks: 用来记录id对应的回调函数</li>
+</ul>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-c"><span class="pl-c">//</span>LogicSystem.cpp</span>
+<span class="pl-en">LogicSystem::LogicSystem</span>()
+	:_b_stop{<span class="pl-c1">false</span>}
+{
+	<span class="pl-c1">RegisterCallBacks</span>();<span class="pl-c"><span class="pl-c">//</span>注册回调函数</span>
+	_worker_thread = <span class="pl-c1">std::thread</span>(&amp;LogicSystem::DealMsg, <span class="pl-c1">this</span>);<span class="pl-c"><span class="pl-c">//</span>启动工作线程</span>
+}</pre></div>
+<p>在构造函数内，我们初始化的时候把_b_stop初始化为false，同时调用RegisterCallBacks()和工作线程，工作线程内启动DealMsg函数。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">LogicSystem::RegisterCallBacks</span>()
+{
+	_fun_callbacks[MSG_HELLO_WORD] = [<span class="pl-c1">this</span>](std::shared_ptr&lt;CSession&gt; session, <span class="pl-k">short</span> msg_id, std::string msg_data)
+		{
+			<span class="pl-c1">HelloWordCallBacks</span>(session, msg_id, msg_data);
+		};
+}</pre></div>
+<p>因为我们客户端和服务器的收发只涉及到HELLO_WORD类型的ID，所以我们在此注册一次。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">LogicSystem::HelloWordCallBacks</span>(std::shared_ptr&lt;CSession&gt; session, <span class="pl-k">short</span> msg_id, std::string msg_data)
+{	<span class="pl-c"><span class="pl-c">//</span>解析json数据</span>
+	Json::Reader <span class="pl-c1">read</span>;
+	Json::Value root;
+	<span class="pl-c1">read</span>.<span class="pl-c1">parse</span>(msg_data, root);
+	std::cout &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>Msg id is: <span class="pl-pds">"</span></span> &lt;&lt; root[<span class="pl-s"><span class="pl-pds">"</span>id<span class="pl-pds">"</span></span>].<span class="pl-c1">asInt</span>() &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span> <span class="pl-pds">"</span></span> &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>Msg data is: <span class="pl-pds">"</span></span> 
+		&lt;&lt; root[<span class="pl-s"><span class="pl-pds">"</span>data<span class="pl-pds">"</span></span>].<span class="pl-c1">asString</span>() &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span><span class="pl-cce">\n</span><span class="pl-pds">"</span></span>;
+	root[<span class="pl-s"><span class="pl-pds">"</span>data<span class="pl-pds">"</span></span>] = <span class="pl-s"><span class="pl-pds">"</span>server has received msg, msg is<span class="pl-pds">"</span></span> + root[<span class="pl-s"><span class="pl-pds">"</span>data<span class="pl-pds">"</span></span>].<span class="pl-c1">asString</span>();
+	std::string return_str = root.<span class="pl-c1">toStyledString</span>();
+	session-&gt;<span class="pl-c1">Send</span>(return_str, root[<span class="pl-s"><span class="pl-pds">"</span>id<span class="pl-pds">"</span></span>].<span class="pl-c1">asInt</span>());<span class="pl-c"><span class="pl-c">//</span>返回数据</span>
+}</pre></div>
+<p>进行Json数据的收发。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">LogicSystem::DealMsg</span>()<span class="pl-c"><span class="pl-c">//</span>处理消息</span>
+{
+	<span class="pl-k">for</span> (;;)
+	{
+		std::unique_lock&lt;std::mutex&gt; <span class="pl-c1">unique_lk</span>(_mutex);
+		<span class="pl-k">while</span> (_msg_que.<span class="pl-c1">empty</span>() &amp;&amp; !_b_stop)
+		{
+			_consume.<span class="pl-c1">wait</span>(unique_lk);
+		}
+
+		<span class="pl-k">if</span> (_b_stop)
+		{
+			<span class="pl-k">while</span> (!_msg_que.<span class="pl-c1">empty</span>())
+			{
+				<span class="pl-k">auto</span> msgdata = _msg_que.<span class="pl-c1">front</span>();
+				std::cout &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>msg id is: <span class="pl-pds">"</span></span> &lt;&lt; msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-c1">GetMsgId</span>() &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span> <span class="pl-pds">"</span></span> 
+					&lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>msg data is: <span class="pl-pds">"</span></span> &lt;&lt; msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-smi">_data</span> &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span><span class="pl-cce">\n</span><span class="pl-pds">"</span></span>;
+				<span class="pl-k">auto</span> call_back_iter = _fun_callbacks.<span class="pl-c1">find</span>(msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-c1">GetMsgId</span>());
+				<span class="pl-k">if</span> (call_back_iter == _fun_callbacks.<span class="pl-c1">end</span>())
+				{
+					_msg_que.<span class="pl-c1">pop</span>();
+					<span class="pl-k">continue</span>;
+				}
+				call_back_iter-&gt;<span class="pl-c1">second</span>(msgdata-&gt;<span class="pl-smi">_session</span>, msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-c1">GetMsgId</span>(),
+					<span class="pl-c1">std::string</span>(msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-smi">_data</span>, msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-smi">_cur_len</span>));
+				_msg_que.<span class="pl-c1">pop</span>();
+			}
+			<span class="pl-k">break</span>;
+		}
+
+		<span class="pl-k">auto</span> msgdata = _msg_que.<span class="pl-c1">front</span>();
+		std::cout &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>msg id is: <span class="pl-pds">"</span></span> &lt;&lt; msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-c1">GetMsgId</span>() &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span> <span class="pl-pds">"</span></span>
+			&lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>msg data is: <span class="pl-pds">"</span></span> &lt;&lt; msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-smi">_data</span> &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span><span class="pl-cce">\n</span><span class="pl-pds">"</span></span>;
+		<span class="pl-k">auto</span> call_back_iter = _fun_callbacks.<span class="pl-c1">find</span>(msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-c1">GetMsgId</span>());
+		<span class="pl-k">if</span> (call_back_iter == _fun_callbacks.<span class="pl-c1">end</span>())
+		{
+			_msg_que.<span class="pl-c1">pop</span>();
+			<span class="pl-k">continue</span>;
+		}
+		call_back_iter-&gt;<span class="pl-c1">second</span>(msgdata-&gt;<span class="pl-smi">_session</span>, msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-c1">GetMsgId</span>(),
+			<span class="pl-c1">std::string</span>(msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-smi">_data</span>, msgdata-&gt;<span class="pl-smi">_send_node</span>-&gt;<span class="pl-smi">_cur_len</span>));
+		_msg_que.<span class="pl-c1">pop</span>();
+	}
+}</pre></div>
+<p>对于消息的处理，我们在一个while循环内进行处理，我们先对其进行加锁，加锁的目的是为了防止主程序多线程造成的影响，从而使得我们的逻辑层是单线程的。<br>
+如果我们的队列为空同时没有接收到服务器停止的信号，那我们就让_consume.wait()，从而不浪费过多的CPU资源。<br>
+但如果我们接收到了服务器停止的信号，那我们就取出消息队列中的所有元素，同时在Set中找到我们对应ID的回调函数，然后运行这个回调函数，并将其从队列中弹出，但是如果我们没有找到这个ID的话，那我们就将其弹出，然后continue掉。<br>
+如果不是以上这两种情况的话，那我们接着处理，处理情况跟上面类似，只不过是上面多了个while循环而言。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-en">LogicSystem::~LogicSystem</span>()
+{
+	_b_stop = <span class="pl-c1">true</span>;
+	_consume.<span class="pl-c1">notify_one</span>();<span class="pl-c"><span class="pl-c">//</span>唤醒线程</span>
+	_worker_thread.<span class="pl-c1">join</span>();<span class="pl-c"><span class="pl-c">//</span>等待全部执行完毕</span>
+}</pre></div>
+<p>对于析构函数，如果我们的逻辑层要被析构的话，那说明我们的服务器已经执行了关闭操作了，那我们就将_b_stop = true，然后唤醒我们的条件变量，然后等待工作线程全部执行完毕。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">void</span> <span class="pl-en">LogicSystem::PostMsgQue</span>(std::shared_ptr&lt;LogicNode&gt; logic_node)
+{
+	std::unique_lock&lt;std::mutex&gt; <span class="pl-c1">unique_lk</span>(_mutex);
+	_msg_que.<span class="pl-c1">push</span>(logic_node);
+	<span class="pl-k">if</span> (_msg_que.<span class="pl-c1">size</span>() == <span class="pl-c1">1</span>)
+	{
+		_consume.<span class="pl-c1">notify_one</span>();
+	}
+}</pre></div>
+<p>当向逻辑层队列投递消息的时候，我们先对其加锁，然后再投递。如果我们的队列之前是空队列，然后此时恰好是我们的第一次投递，那此时队列长度就是1，此时我们就唤醒我们的条件变量。</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-k">class</span> <span class="pl-en">LogicNode</span> 
+{
+	<span class="pl-k">friend</span> <span class="pl-k">class</span> <span class="pl-en">LogicSystem</span>;
+<span class="pl-k">public:</span>
+	<span class="pl-en">LogicNode</span>(std::shared_ptr&lt;CSession&gt; session, std::shared_ptr&lt;RecvNode&gt; recv_node)
+		:_session(session), _recv_node(recv_node)
+	{
+	}
+	<span class="pl-en">~LogicNode</span>()
+	{
+		std::cout &lt;&lt; <span class="pl-s"><span class="pl-pds">"</span>LogicNode destructed<span class="pl-pds">"</span></span> &lt;&lt; std::endl;
+	}
+<span class="pl-k">private:</span>
+	std::shared_ptr&lt;CSession&gt; _session;
+	std::shared_ptr&lt;RecvNode&gt; _recv_node;
+};</pre></div>
+<p>我们的LogicNode包含两个数据，一个是我们的消息节点，另外一个是我们的会话.</p>
+<div class="highlight highlight-source-c++"><pre class="notranslate"><span class="pl-en">LogicSystem::GetInstance</span>()-&gt;PostMsgQue(std::make_shared&lt;LogicNode&gt;(shared_from_this(), _recv_msg_node));</pre></div>
+<p>发送时候我们采用这个方式进行发送。</p>
+<h3>运行结果</h3>
+<p><a target="_blank" rel="noopener noreferrer" href="https://github.com/FKlightdog/Images/blob/main/LogicRun.png?raw=true"><img src="https://github.com/FKlightdog/Images/blob/main/LogicRun.png?raw=true" alt="picture" style="max-width: 100%;"></a></p></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://Fklightdog.github.io">Fklightdog</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","FKlightdog/Fklightdog.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const createClipboardHTML = (codeContent, additionalClasses = '') => `
+        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
+        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
+            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
+                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
+                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
+            </clipboard-copy>
+            <div class="copy-feedback">Copied!</div>
+        </div>
+    `;
+
+    const handleCodeElements = (selector = '') => {
+        document.querySelectorAll(selector).forEach(codeElement => {
+            const codeContent = codeElement.innerHTML;
+            const newStructure = document.createElement('div');
+            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
+            newStructure.innerHTML = createClipboardHTML(codeContent);
+
+            const parentElement = codeElement.parentElement;
+            if (selector.includes('highlight')) {
+                parentElement.insertBefore(newStructure, codeElement.nextSibling);
+                parentElement.removeChild(codeElement);
+            } else {
+                parentElement.parentElement.replaceChild(newStructure, parentElement);
+            }
+        });
+    };
+
+    handleCodeElements('pre.notranslate > code.notranslate');
+    handleCodeElements('div.highlight > pre.notranslate');
+
+    let currentFeedback = null;
+    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
+        copyButton.addEventListener('click', () => {
+            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeContent;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+
+            const copyIcon = copyButton.querySelector('.octicon-copy');
+            const checkIcon = copyButton.querySelector('.octicon-check');
+            const copyFeedback = copyButton.nextElementSibling;
+
+            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
+            currentFeedback = copyFeedback;
+
+            copyIcon.classList.add('d-none');
+            checkIcon.classList.remove('d-none');
+            copyFeedback.style.display = 'block';
+            copyButton.style.borderColor = 'var(--color-success-fg)';
+
+            setTimeout(() => {
+                copyIcon.classList.remove('d-none');
+                checkIcon.classList.add('d-none');
+                copyFeedback.style.display = 'none';
+                copyButton.style.borderColor = '';
+            }, 2000);
+        });
+    });
+});
+
+</script>
+<script src='https://blog.meekdai.com/Gmeek/plugins/GmeekTOC.js'></script>
+
+</html>
